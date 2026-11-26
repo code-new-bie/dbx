@@ -18,6 +18,8 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -26,6 +28,15 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Verify formatting and print exact fix on failure
+        shell: bash
+        run: |
+          files=(apps/desktop/src/components/layout/SqlFilePanel.vue apps/desktop/src/lib/plugins/sqlFilePluginContext.ts apps/desktop/src/lib/plugins/sqlFilePluginContext.spec.ts)
+          if ! pnpm exec oxfmt --check "${files[@]}"; then
+            pnpm exec oxfmt "${files[@]}"
+            git diff -- "${files[@]}"
+            exit 1
+          fi
       - name: Typecheck
         run: pnpm typecheck
       - name: Test plugin context routing and registry
