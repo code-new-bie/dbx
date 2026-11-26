@@ -636,6 +636,7 @@ export interface PluginContextMenuContribution {
   icon?: string;
   menu: PluginContextMenuTarget;
   dynamic?: boolean;
+  decorations?: boolean;
   action?: PluginOpenWorkbenchTarget;
 }
 
