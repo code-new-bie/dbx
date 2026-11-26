@@ -1632,9 +1632,7 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
   const path = target.kind === "folderHeader" ? target.folderPath : target.entry.path;
   const kind = target.kind === "file" ? "file" : "folder";
   if (target.kind === "file" && !isSqlOrScriptFilePath(target.entry.name)) return native;
-  const extras = buildSqlFilePluginMenuItems(sqlFilePluginRegistry.value, {
-    kind, path, rootPath: target.folderPath,
-  }, (pluginId, workbenchId, title, context) => {
+  const extras = buildSqlFilePluginMenuItems(sqlFilePluginRegistry.value, { kind, path, rootPath: target.folderPath }, (pluginId, workbenchId, title, context) => {
     queryStore.openPluginWorkbench(pluginId, workbenchId, { title, context, refreshContextOnReuse: true });
   });
   return extras.length ? [...native, { label: "", separator: true }, ...extras] : native;
