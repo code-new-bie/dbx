@@ -125,6 +125,22 @@ describe("plugin command registry (PR-A4)", () => {
     expect(visible.value).toBe(false);
   });
 
+  it("refreshes a reused dock context only on an explicit host request", () => {
+    const registry = createFrontendPluginRegistry([installedPlugin("io.dbx.ssh", [{ type: "workbench", id: "io.dbx.ssh.workbench", label: "SSH" }, localTerminalCommand({ presentation: "panel" })] as unknown as InstalledPlugin["manifest"]["contributions"])]);
+    const query = { openPluginWorkbench: vi.fn() } as never;
+    const { entries } = usePluginBottomDock();
+    const first = { sqlFile: { kind: "file", path: "/sql/a.sql", rootPath: "/sql" } };
+    const second = { sqlFile: { kind: "file", path: "/sql/b.sql", rootPath: "/sql" } };
+    executePluginCommand(registry, query, "io.dbx.ssh", "open-local-terminal", first);
+    const id = entries.value[0].id;
+    executePluginCommand(registry, query, "io.dbx.ssh", "open-local-terminal", second);
+    expect(entries.value[0].context.sqlFile).toEqual(first.sqlFile);
+    executePluginCommand(registry, query, "io.dbx.ssh", "open-local-terminal", { ...second, workbenchId: "forged", surface: "tab" }, { refreshContextOnReuse: true });
+    expect(entries.value).toHaveLength(1);
+    expect(entries.value[0].id).toBe(id);
+    expect(entries.value[0].context).toMatchObject({ ...second, workbenchId: id, restored: false, surface: "dock" });
+  });
+
   it("reuse:new spawns one dock entry per execution", () => {
     const registry = createFrontendPluginRegistry([
       installedPlugin("io.dbx.ssh", [
