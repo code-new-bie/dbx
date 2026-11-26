@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, useId } from "vue";
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, useId, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   FolderOpen,
@@ -43,6 +43,8 @@ import SidebarLocateButton from "@/components/sidebar/SidebarLocateButton.vue";
 import SqlSearchMatchSnippet from "@/components/layout/SqlSearchMatchSnippet.vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { useQueryStore } from "@/stores/queryStore";
+import { createFrontendPluginRegistry } from "@/lib/plugins/frontendPlugin";
+import { buildSqlFilePluginMenuItems } from "@/lib/plugins/sqlFilePluginContext";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToast } from "@/composables/useToast";
@@ -85,7 +87,7 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const queryStore = useQueryStore();
 const connectionStore = useConnectionStore();
 const settingsStore = useSettingsStore();
@@ -1490,8 +1492,33 @@ function changeFileConnection() {
   toast(t("sqlLibrary.changeTargetSuccess", { count: paths.length }), 2500);
 }
 
+// ---- SQL file plugin context menus ----
+const sqlFilePluginRegistry = shallowRef(createFrontendPluginRegistry([]));
+let sqlFilePluginRequest = 0;
+async function refreshSqlFilePlugins() {
+  const request = ++sqlFilePluginRequest;
+  try {
+    const plugins = await api.listPlugins();
+    if (request === sqlFilePluginRequest) sqlFilePluginRegistry.value = createFrontendPluginRegistry(plugins, locale.value);
+  } catch {
+    if (request === sqlFilePluginRequest) sqlFilePluginRegistry.value = createFrontendPluginRegistry([]);
+  }
+}
+const onSqlFilePluginsChanged = () => void refreshSqlFilePlugins();
+onMounted(() => {
+  onSqlFilePluginsChanged();
+  window.addEventListener("dbx:plugins-changed", onSqlFilePluginsChanged);
+  window.addEventListener("focus", onSqlFilePluginsChanged);
+});
+watch(locale, onSqlFilePluginsChanged);
+onBeforeUnmount(() => {
+  sqlFilePluginRequest++;
+  window.removeEventListener("dbx:plugins-changed", onSqlFilePluginsChanged);
+  window.removeEventListener("focus", onSqlFilePluginsChanged);
+});
+
 // ---- context menu ----
-const contextMenuItems = computed<ContextMenuItem[]>(() => {
+const nativeContextMenuItems = computed<ContextMenuItem[]>(() => {
   const target = contextTarget.value;
   if (!target) return [];
 
@@ -1596,6 +1623,21 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
     { label: t("sqlFileTree.deleteFile"), action: () => openDeleteDialog(target), icon: Trash2, variant: "destructive" },
   );
   return items;
+});
+
+const contextMenuItems = computed<ContextMenuItem[]>(() => {
+  const target = contextTarget.value;
+  const native = nativeContextMenuItems.value;
+  if (!target || target.kind === "panel" || !isTauriRuntime()) return native;
+  const path = target.kind === "folderHeader" ? target.folderPath : target.entry.path;
+  const kind = target.kind === "file" ? "file" : "folder";
+  if (target.kind === "file" && !isSqlOrScriptFilePath(target.entry.name)) return native;
+  const extras = buildSqlFilePluginMenuItems(sqlFilePluginRegistry.value, {
+    kind, path, rootPath: target.folderPath,
+  }, (pluginId, workbenchId, title, context) => {
+    queryStore.openPluginWorkbench(pluginId, workbenchId, { title, context, refreshContextOnReuse: true });
+  });
+  return extras.length ? [...native, { label: "", separator: true }, ...extras] : native;
 });
 
 function expandSubtree(target: Extract<ContextTarget, { kind: "dir" }>) {
