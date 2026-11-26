@@ -1596,9 +1596,7 @@ fn validate_contributions(
                     errors.push(format!("Context menu contribution '{id}' requires a backend entrypoint"));
                 }
                 if menu.decorations && (menu.menu != "sql-folder" || !has_backend) {
-                    errors.push(format!(
-                        "Context menu '{id}' decorations require a SQL folder and backend entrypoint"
-                    ));
+                    errors.push(format!("Context menu '{id}' decorations require a SQL folder and backend entrypoint"));
                 }
                 if menu.dynamic && !has_backend {
                     errors.push(format!("Dynamic context menu contribution '{id}' requires a backend entrypoint"));
