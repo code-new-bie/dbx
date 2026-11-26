@@ -1549,7 +1549,7 @@ async function refreshSqlDecorations() {
   const generation = decorationGeneration;
   const next = new Map<string, Map<string, SqlFileDecorationBadge>>();
   try {
-    for (const [key, scope] of [...decorationScopes]) {
+    for (const [key, scope] of decorationScopes) {
       if (decorationDisposed || generation !== decorationGeneration) return;
       const enabled = sqlFilePluginRegistry.value.listContextMenuItems("sql-folder").some(({ plugin, contribution }) => plugin.manifest.id === scope.pluginId && contribution.id === scope.contributionId && contribution.decorations);
       if (!enabled || !folders.value.some((folder) => folder.path === scope.target.rootPath)) {
