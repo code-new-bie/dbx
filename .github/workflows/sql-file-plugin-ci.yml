@@ -31,7 +31,7 @@ jobs:
       - name: Verify formatting and print exact fix on failure
         shell: bash
         run: |
-          files=(apps/desktop/src/components/layout/SqlFilePanel.vue apps/desktop/src/lib/plugins/sqlFilePluginContext.ts apps/desktop/src/lib/plugins/sqlFilePluginContext.spec.ts)
+          files=(apps/desktop/src/components/layout/SqlFilePanel.vue apps/desktop/src/lib/plugins/sqlFilePluginContext.ts apps/desktop/src/lib/plugins/sqlFilePluginContext.spec.ts apps/desktop/src/lib/plugins/pluginCommandRegistry.ts apps/desktop/src/lib/plugins/pluginCommandRegistry.spec.ts)
           if ! pnpm exec oxfmt --check "${files[@]}"; then
             pnpm exec oxfmt "${files[@]}"
             git diff -- "${files[@]}"
@@ -40,7 +40,7 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
       - name: Test plugin context routing and registry
-        run: pnpm test apps/desktop/src/lib/plugins/sqlFilePluginContext.spec.ts apps/desktop/src/lib/plugins/frontendPlugin.spec.ts apps/desktop/src/lib/plugins/pluginContext.spec.ts
+        run: pnpm test apps/desktop/src/lib/plugins/sqlFilePluginContext.spec.ts apps/desktop/src/lib/plugins/frontendPlugin.spec.ts apps/desktop/src/lib/plugins/pluginContext.spec.ts apps/desktop/src/lib/plugins/pluginCommandRegistry.spec.ts
   manifest:
     runs-on: ubuntu-latest
     timeout-minutes: 30
