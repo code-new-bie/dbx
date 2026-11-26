@@ -1582,7 +1582,9 @@ fn validate_contributions(
                     ));
                 }
                 if matches!(menu.menu.as_str(), "sql-file" | "sql-folder") && (menu.dynamic || menu.action.is_none()) {
-                    errors.push(format!("SQL file context menu contribution '{id}' requires a static open-workbench action"));
+                    errors.push(format!(
+                        "SQL file context menu contribution '{id}' requires a static open-workbench action"
+                    ));
                 }
                 if let Some(PluginContextMenuAction::OpenWorkbench(action)) = &menu.action {
                     validate_optional_reference(Some(action.workbench.as_str()), "workbench", id, errors);
@@ -3174,7 +3176,7 @@ mod tests {
         let compatibility = manifest.compatibility(dir.path(), "0.1.0");
         assert!(!compatibility.compatible);
         assert!(compatibility.errors.iter().any(|error| {
-            error == "Context menu 'io.dbx.example.inspect' declares unsupported menu 'schema'; only 'connection' and 'table' are available"
+            error == "Context menu 'io.dbx.example.inspect' declares unsupported menu 'schema'; only 'connection', 'table', 'sql-file' and 'sql-folder' are available"
         }));
         Ok(())
     }
