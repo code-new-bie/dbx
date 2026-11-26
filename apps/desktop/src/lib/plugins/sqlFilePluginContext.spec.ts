@@ -19,12 +19,12 @@ describe("SQL file plugin context menu", () => {
     const open = vi.fn();
     const target = { kind: "file" as const, path: "C:/SQL/a @ 中文.sql", rootPath: "C:/SQL" };
     const items = buildSqlFilePluginMenuItems(registry, target, open);
-    expect(items.map(i => i.label)).toEqual(["Inspect file"]);
+    expect(items.map((i) => i.label)).toEqual(["Inspect file"]);
     items[0].action?.();
     expect(open).toHaveBeenCalledWith("example", "example.main", "Inspect file", { sqlFile: target });
     const folder = { kind: "folder" as const, path: "/sql/nested", rootPath: "/sql" };
     const folders = buildSqlFilePluginMenuItems(registry, folder, open);
-    expect(folders.map(i => i.label)).toEqual(["Inspect folder"]);
+    expect(folders.map((i) => i.label)).toEqual(["Inspect folder"]);
     folders[0].action?.();
     expect(open).toHaveBeenLastCalledWith("example", "example.main", "Inspect folder", { sqlFile: folder });
   });
@@ -36,10 +36,14 @@ describe("SQL file plugin context menu", () => {
         { type: "workbench", id: "a.main", label: "A" },
         { type: "context-menu", id: "a.dynamic", menu: "sql-file", label: "Dynamic", dynamic: true, action: { type: "open-workbench", workbench: "a.main" } },
       ]),
-      plugin("b", [
-        { type: "workbench", id: "b.main", label: "B" },
-        { type: "context-menu", id: "b.file", menu: "sql-file", label: "Disabled", action: { type: "open-workbench", workbench: "b.main" } },
-      ], false),
+      plugin(
+        "b",
+        [
+          { type: "workbench", id: "b.main", label: "B" },
+          { type: "context-menu", id: "b.file", menu: "sql-file", label: "Disabled", action: { type: "open-workbench", workbench: "b.main" } },
+        ],
+        false,
+      ),
     ]);
     expect(buildSqlFilePluginMenuItems(registry, { kind: "file", path: "/sql/x.sql", rootPath: "/sql" }, vi.fn())).toEqual([]);
   });
