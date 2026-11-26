@@ -367,10 +367,18 @@
         "label": { "type": "string", "minLength": 1 },
         "description": { "type": "string" },
         "icon": { "$ref": "#/$defs/assetPath" },
-        "menu": { "enum": ["connection", "table"] },
+        "menu": { "enum": ["connection", "table", "sql-file", "sql-folder"] },
         "dynamic": { "type": "boolean", "description": "Resolve native menu items through contextMenu/resolve/<id> when the menu opens." },
+        "decorations": { "type": "boolean", "description": "Enable read-only decorations after explicit SQL folder activation." },
         "action": { "$ref": "#/$defs/contextMenuAction" }
-      }
+      },
+      "allOf": [{
+        "if": { "properties": { "menu": { "enum": ["sql-file", "sql-folder"] } }, "required": ["menu"] },
+        "then": { "required": ["action"], "properties": { "dynamic": { "const": false } } }
+      }, {
+        "if": { "properties": { "decorations": { "const": true } }, "required": ["decorations"] },
+        "then": { "properties": { "menu": { "const": "sql-folder" } } }
+      }]
     },
     "contextMenuAction": {
       "type": "object",

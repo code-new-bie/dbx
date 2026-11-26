@@ -1,0 +1,131 @@
+name: Windows VCS preview installer
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-vcs-preview.yml'
+      - '.github/scripts/prepare-vcs-preview.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-vcs-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCS_PLUGIN_SHA: 9b005e2549139c2de0fe67c583c9a7edfe485a63
+  NODE_OPTIONS: --max-old-space-size=8192
+  DBX_VCS_PREVIEW: '1'
+  CARGO_INCREMENTAL: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_PROFILE_RELEASE_LTO: 'false'
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+  RUSTFLAGS: -C link-arg=/STACK:8388608
+
+jobs:
+  windows-preview:
+    if: github.repository == 'code-new-bie/dbx' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './ -> target'
+          shared-key: vcs-preview-windows-x64
+          cache-targets: false
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify source before preview transformation
+        shell: pwsh
+        run: |
+          cargo fmt --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prepare isolated preview
+        run: node .github/scripts/prepare-vcs-preview.mjs
+      - name: Build unsigned Windows NSIS installer
+        run: pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Collect installer and portable desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = 'target/x86_64-pc-windows-msvc/release'
+          $installers = @(Get-ChildItem "$release/bundle/nsis" -Filter '*.exe' -File)
+          if ($installers.Count -ne 1) { throw "Expected one NSIS installer, found $($installers.Count)" }
+          $binary = @("$release/dbx-vcs-preview.exe", "$release/dbx.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$binary) { throw 'Missing desktop executable' }
+          ./.github/scripts/assert-windows-stack-reserve.ps1 -BinaryPath $binary
+          New-Item -ItemType Directory -Force preview-output, preview-portable | Out-Null
+          Copy-Item $installers[0].FullName 'preview-output/DBX-VCS-Preview-x64-setup.exe'
+          Copy-Item $binary 'preview-portable/DBX-VCS-Preview.exe'
+          Copy-Item LICENSE 'preview-portable/LICENSE'
+          New-Item -ItemType File -Path 'preview-portable/portable.dbx' -Force | Out-Null
+          Compress-Archive -Path 'preview-portable/*' -DestinationPath 'preview-output/DBX-VCS-Preview-x64-portable.zip' -Force
+          $hostSha = git rev-parse HEAD
+          "Host commit: $hostSha" | Set-Content preview-output/build-info.txt
+          "Plugin commit: $env:VCS_PLUGIN_SHA" | Add-Content preview-output/build-info.txt
+          "Unsigned experimental build; no official updater." | Add-Content preview-output/build-info.txt
+      - uses: actions/checkout@v7
+        with:
+          repository: code-new-bie/dbx-plugin-vcs
+          ref: ${{ env.VCS_PLUGIN_SHA }}
+          path: _vcs_plugin
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Package matching VCS plugin
+        shell: pwsh
+        working-directory: _vcs_plugin
+        run: |
+          npm install --global @dbx-app/plugin-cli@0.1.10
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dbx-plugin package .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item dist/io.github.code-new-bie.vcs-0.2.2-windows-x64.dbxp ../preview-output/
+          Copy-Item dist/io.github.code-new-bie.vcs-0.2.2-windows-x64.artifact.json ../preview-output/
+      - name: Write installation notes and checksums
+        shell: pwsh
+        run: |
+          @'
+          DBX VCS Preview / Windows 10-11 x64
+          1. Close any running DBX instances. Back up your official DBX data.
+          2. Install the preview setup EXE, or extract the portable ZIP to a new writable directory.
+          3. Open Plugin Center; explicitly allow unsigned local packages, then install the included .dbxp.
+          4. Ensure git and svn CLI tools are installed and on PATH.
+          5. Open a trusted local Git or SVN SQL folder in the native SQL Files panel.
+          6. Right-click the folder to activate file status decorations; right-click a SQL file to view its diff in the dock.
+          Preview uses a separate application identifier and disables official updates.
+          Do not use a production DBX profile or enable cloud synchronization in this preview.
+          No code signing certificate is used. Desktop runtime acceptance remains pending.
+          '@ | Set-Content preview-output/INSTALL.txt -Encoding utf8
+          Get-ChildItem preview-output -File | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content preview-output/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DBX-VCS-Preview-Windows-x64
+          path: preview-output/*
+          if-no-files-found: error
+          retention-days: 14

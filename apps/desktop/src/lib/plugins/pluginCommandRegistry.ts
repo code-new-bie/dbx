@@ -32,7 +32,7 @@ export interface PluginCommandExecutionResult {
  * §5.4 re-validate enablement right before execution (against the current context snapshot; the surface key follows
  * presentation).
  */
-export function executePluginCommand(registry: FrontendPluginRegistry, queryStore: ReturnType<typeof useQueryStore>, pluginId: string, commandId: string, callerContext?: Record<string, unknown>): PluginCommandExecutionResult {
+export function executePluginCommand(registry: FrontendPluginRegistry, queryStore: ReturnType<typeof useQueryStore>, pluginId: string, commandId: string, callerContext?: Record<string, unknown>, options?: { refreshContextOnReuse?: boolean }): PluginCommandExecutionResult {
   const command = registry.findCommand(pluginId, commandId)?.contribution;
   if (!command) return { error: `Unknown command '${pluginId}.${commandId}'` };
   const action = command.action;
@@ -52,7 +52,7 @@ export function executePluginCommand(registry: FrontendPluginRegistry, queryStor
   delete callerPayload.workbenchId;
   delete callerPayload.restored;
   delete callerPayload.surface;
-  const executionContext = { ...(action.context ?? {}), ...callerPayload };
+  const executionContext = { ...action.context, ...callerPayload };
   // presentation: panel -> adds an entry to the global bottom dock (§8.3); tab (default)
   // -> opens a workbench tab.
   if (action.presentation === "panel") {
@@ -68,6 +68,7 @@ export function executePluginCommand(registry: FrontendPluginRegistry, queryStor
     if (action.reuse !== "new") {
       const existing = findReusableDockEntry(pluginId, command.id, instanceKey);
       if (existing) {
+        if (options?.refreshContextOnReuse) existing.context = { ...executionContext, workbenchId: existing.id, restored: false, surface: "dock" };
         activatePluginDockEntry(existing.id);
         return {};
       }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, useId } from "vue";
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, useId, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   FolderOpen,
@@ -43,6 +43,9 @@ import SidebarLocateButton from "@/components/sidebar/SidebarLocateButton.vue";
 import SqlSearchMatchSnippet from "@/components/layout/SqlSearchMatchSnippet.vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import { useQueryStore } from "@/stores/queryStore";
+import { createFrontendPluginRegistry } from "@/lib/plugins/frontendPlugin";
+import { buildSqlFilePluginMenuItems, sanitizeSqlFileDecorations, sqlFileDecorationKey, type SqlFilePluginContext, type SqlFileDecorationBadge } from "@/lib/plugins/sqlFilePluginContext";
+import { executePluginCommand } from "@/lib/plugins/pluginCommandRegistry";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToast } from "@/composables/useToast";
@@ -85,7 +88,7 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const queryStore = useQueryStore();
 const connectionStore = useConnectionStore();
 const settingsStore = useSettingsStore();
@@ -1490,8 +1493,115 @@ function changeFileConnection() {
   toast(t("sqlLibrary.changeTargetSuccess", { count: paths.length }), 2500);
 }
 
+// ---- SQL file plugin context menus ----
+const sqlFilePluginRegistry = shallowRef(createFrontendPluginRegistry([]));
+let sqlFilePluginRequest = 0;
+async function refreshSqlFilePlugins() {
+  const request = ++sqlFilePluginRequest;
+  try {
+    const plugins = await api.listPlugins();
+    if (request === sqlFilePluginRequest) sqlFilePluginRegistry.value = createFrontendPluginRegistry(plugins, locale.value);
+  } catch {
+    if (request === sqlFilePluginRequest) sqlFilePluginRegistry.value = createFrontendPluginRegistry([]);
+  }
+}
+// Only explicit SQL-folder menu activation authorizes a session-local scan.
+type DecorationScope = { pluginId: string; contributionId: string; target: SqlFilePluginContext };
+const decorationScopes = new Map<string, DecorationScope>();
+const decorationResults = shallowRef(new Map<string, Map<string, SqlFileDecorationBadge>>());
+const sqlFileDecorations = computed(() => {
+  const result = new Map<string, SqlFileDecorationBadge>();
+  for (const values of decorationResults.value.values()) {
+    for (const [path, badge] of values) result.set(path, badge);
+  }
+  return result;
+});
+let decorationTimer: ReturnType<typeof setTimeout> | undefined;
+let decorationRunning = false;
+let decorationDisposed = false;
+let decorationGeneration = 0;
+
+function scheduleSqlDecorations() {
+  if (decorationDisposed || !decorationScopes.size) return;
+  if (decorationTimer !== undefined) clearTimeout(decorationTimer);
+  decorationTimer = setTimeout(() => void refreshSqlDecorations(), 350);
+}
+
+function enableSqlDecorations(pluginId: string, contributionId: string, target: SqlFilePluginContext) {
+  const key = JSON.stringify([pluginId, contributionId, target.path]);
+  if (!decorationScopes.has(key) && decorationScopes.size >= 8) {
+    const oldest = decorationScopes.keys().next().value;
+    if (oldest !== undefined) {
+      decorationScopes.delete(oldest);
+      const next = new Map(decorationResults.value);
+      next.delete(oldest);
+      decorationResults.value = next;
+    }
+  }
+  decorationScopes.set(key, { pluginId, contributionId, target });
+  decorationGeneration++;
+  scheduleSqlDecorations();
+}
+
+async function refreshSqlDecorations() {
+  if (decorationDisposed || decorationRunning) return;
+  decorationRunning = true;
+  const generation = decorationGeneration;
+  const next = new Map<string, Map<string, SqlFileDecorationBadge>>();
+  try {
+    for (const [key, scope] of decorationScopes) {
+      if (decorationDisposed || generation !== decorationGeneration) return;
+      const enabled = sqlFilePluginRegistry.value.listContextMenuItems("sql-folder").some(({ plugin, contribution }) => plugin.manifest.id === scope.pluginId && contribution.id === scope.contributionId && contribution.decorations);
+      if (!enabled || !folders.value.some((folder) => folder.path === scope.target.rootPath)) {
+        decorationScopes.delete(key);
+        continue;
+      }
+      try {
+        const value = await api.invokePlugin(scope.pluginId, "sqlFile/decorations/" + scope.contributionId, { kind: "folder", path: scope.target.path }, 30000);
+        next.set(key, sanitizeSqlFileDecorations(scope.target.path, value));
+      } catch {
+        // Failed/oversized responses clear stale markers instead of blocking the file tree.
+      }
+    }
+    if (!decorationDisposed && generation === decorationGeneration) decorationResults.value = next;
+  } finally {
+    decorationRunning = false;
+    if (!decorationDisposed && generation !== decorationGeneration) scheduleSqlDecorations();
+  }
+}
+
+function sqlFileBadge(path: string) {
+  return sqlFileDecorations.value.get(sqlFileDecorationKey(path));
+}
+function sqlFileBadgeClass(path: string) {
+  const badge = sqlFileBadge(path);
+  return badge === "C" || badge === "D" || badge === "!" ? "text-red-500" : badge === "A" ? "text-green-500" : badge === "?" ? "text-muted-foreground" : "text-amber-500";
+}
+watch(foldersRevision, scheduleSqlDecorations);
+const onSqlFilePluginsChanged = () => {
+  void refreshSqlFilePlugins().then(scheduleSqlDecorations);
+};
+let decorationPoll: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  onSqlFilePluginsChanged();
+  decorationPoll = setInterval(scheduleSqlDecorations, 10000);
+  window.addEventListener("dbx:plugins-changed", onSqlFilePluginsChanged);
+  window.addEventListener("focus", onSqlFilePluginsChanged);
+});
+watch(locale, onSqlFilePluginsChanged);
+onBeforeUnmount(() => {
+  sqlFilePluginRequest++;
+  decorationDisposed = true;
+  decorationGeneration++;
+  if (decorationTimer !== undefined) clearTimeout(decorationTimer);
+  if (decorationPoll !== undefined) clearInterval(decorationPoll);
+  decorationScopes.clear();
+  window.removeEventListener("dbx:plugins-changed", onSqlFilePluginsChanged);
+  window.removeEventListener("focus", onSqlFilePluginsChanged);
+});
+
 // ---- context menu ----
-const contextMenuItems = computed<ContextMenuItem[]>(() => {
+const nativeContextMenuItems = computed<ContextMenuItem[]>(() => {
   const target = contextTarget.value;
   if (!target) return [];
 
@@ -1596,6 +1706,30 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
     { label: t("sqlFileTree.deleteFile"), action: () => openDeleteDialog(target), icon: Trash2, variant: "destructive" },
   );
   return items;
+});
+
+const contextMenuItems = computed<ContextMenuItem[]>(() => {
+  const target = contextTarget.value;
+  const native = nativeContextMenuItems.value;
+  if (!target || target.kind === "panel" || !isTauriRuntime()) return native;
+  const path = target.kind === "folderHeader" ? target.folderPath : target.entry.path;
+  const kind = target.kind === "file" ? "file" : "folder";
+  if (target.kind === "file" && !isSqlOrScriptFilePath(target.entry.name)) return native;
+  const extras = buildSqlFilePluginMenuItems(
+    sqlFilePluginRegistry.value,
+    { kind, path, rootPath: target.folderPath },
+    (pluginId, workbenchId, title, context) => {
+      const commands = sqlFilePluginRegistry.value.listCommands().filter(({ plugin, contribution }) => plugin.manifest.id === pluginId && contribution.action.workbench === workbenchId && contribution.action.presentation === "panel");
+      if (commands.length === 1) {
+        const result = executePluginCommand(sqlFilePluginRegistry.value, queryStore, pluginId, commands[0].contribution.id, context, { refreshContextOnReuse: true });
+        if (result.error) toast(result.error, 5000);
+        return;
+      }
+      queryStore.openPluginWorkbench(pluginId, workbenchId, { title, context, refreshContextOnReuse: true });
+    },
+    enableSqlDecorations,
+  );
+  return extras.length ? [...native, { label: "", separator: true }, ...extras] : native;
 });
 
 function expandSubtree(target: Extract<ContextTarget, { kind: "dir" }>) {
@@ -1767,6 +1901,7 @@ function clearContextTarget() {
                     <span class="w-3.5 shrink-0" />
                     <FileCode class="h-4 w-4 shrink-0 text-blue-500" />
                     <span class="truncate ml-1 flex-1" :title="row.entry.path">{{ row.entry.name }}</span>
+                    <span v-if="sqlFileBadge(row.entry.path)" class="shrink-0 font-mono text-xs font-semibold" :class="sqlFileBadgeClass(row.entry.path)" :data-sql-file-decoration="sqlFileBadge(row.entry.path)">{{ sqlFileBadge(row.entry.path) }}</span>
                     <span class="max-w-[45%] truncate text-[10px] text-muted-foreground" :title="row.folder.path">{{ row.folder.path }}</span>
                     <LightTooltip :text="t('sqlFileTree.renameFile')" side="bottom" :delay="0" :close-delay="0" nowrap>
                       <Button variant="ghost" size="icon" class="h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground" @click.stop="openRenameDialog({ kind: 'file', folderPath: row.folder.path, entry: row.entry })">
@@ -1915,6 +2050,7 @@ function clearContextTarget() {
                         <FileText v-else class="h-4 w-4 shrink-0 text-muted-foreground" />
                       </template>
                       <span class="truncate ml-1 flex-1">{{ entry.name }}</span>
+                      <span v-if="sqlFileBadge(entry.path)" class="shrink-0 font-mono text-xs font-semibold" :class="sqlFileBadgeClass(entry.path)" :data-sql-file-decoration="sqlFileBadge(entry.path)">{{ sqlFileBadge(entry.path) }}</span>
                       <template v-if="entry.is_dir">
                         <LightTooltip :text="t('sqlFileTree.newSqlFile')" side="bottom" :delay="0" :close-delay="0" nowrap>
                           <Button variant="ghost" size="icon" class="h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground" @click.stop="openCreateDialog(folder.path, entry.path)">
