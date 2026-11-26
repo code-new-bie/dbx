@@ -619,7 +619,7 @@ export interface PluginFilesystemMutationResult {
   entry?: PluginFilesystemEntry;
 }
 
-export type PluginContextMenuTarget = "connection" | "table";
+export type PluginContextMenuTarget = "connection" | "table" | "sql-file" | "sql-folder";
 
 export interface PluginTableContext {
   connectionId: string;
