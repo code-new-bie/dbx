@@ -850,6 +850,9 @@ pub struct PluginContextMenuContribution {
     /// Resolve native items through `contextMenu/resolve/<id>` on each menu open.
     #[serde(default, skip_serializing_if = "is_false")]
     pub dynamic: bool,
+    /// Opt in to read-only decorations after explicit activation of a SQL folder menu.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub decorations: bool,
     /// Optional host-handled action. When absent, the legacy backend entrypoint is required.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action: Option<PluginContextMenuAction>,
@@ -1591,6 +1594,11 @@ fn validate_contributions(
                     context_menu_workbench_references.push((id.to_string(), action.workbench.clone()));
                 } else if !has_backend {
                     errors.push(format!("Context menu contribution '{id}' requires a backend entrypoint"));
+                }
+                if menu.decorations && (menu.menu != "sql-folder" || !has_backend) {
+                    errors.push(format!(
+                        "Context menu '{id}' decorations require a SQL folder and backend entrypoint"
+                    ));
                 }
                 if menu.dynamic && !has_backend {
                     errors.push(format!("Dynamic context menu contribution '{id}' requires a backend entrypoint"));
