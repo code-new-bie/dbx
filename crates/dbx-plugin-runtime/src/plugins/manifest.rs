@@ -844,7 +844,7 @@ pub struct PluginContextMenuContribution {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// Menu surface the item belongs to: `connection` or `table`.
+    /// Menu surface: `connection`, `table`, `sql-file` or `sql-folder`.
     #[serde(default)]
     pub menu: String,
     /// Resolve native items through `contextMenu/resolve/<id>` on each menu open.
@@ -1575,11 +1575,14 @@ fn validate_contributions(
             PluginContribution::ContextMenu(menu) => {
                 validate_required_text(&menu.label, &format!("Context menu '{id}' label"), errors);
                 validate_declared_icon(plugin_dir, &format!("Context menu '{id}' icon"), menu.icon.as_deref(), errors);
-                if menu.menu != "connection" && menu.menu != "table" {
+                if !matches!(menu.menu.as_str(), "connection" | "table" | "sql-file" | "sql-folder") {
                     errors.push(format!(
-                        "Context menu '{id}' declares unsupported menu '{}'; only 'connection' and 'table' are available",
+                        "Context menu '{id}' declares unsupported menu '{}'; only 'connection', 'table', 'sql-file' and 'sql-folder' are available",
                         menu.menu
                     ));
+                }
+                if matches!(menu.menu.as_str(), "sql-file" | "sql-folder") && (menu.dynamic || menu.action.is_none()) {
+                    errors.push(format!("SQL file context menu contribution '{id}' requires a static open-workbench action"));
                 }
                 if let Some(PluginContextMenuAction::OpenWorkbench(action)) = &menu.action {
                     validate_optional_reference(Some(action.workbench.as_str()), "workbench", id, errors);
@@ -3045,6 +3048,37 @@ mod tests {
     }
 
     #[test]
+    fn sql_file_context_menu_requires_static_workbench_action() -> Result<(), Box<dyn std::error::Error>> {
+        let plugin_dir = tempfile::tempdir()?;
+        for target in ["sql-file", "sql-folder"] {
+            let workbench: PluginContribution = serde_json::from_value(serde_json::json!({
+                "type": "workbench", "id": "sample.main", "label": "Sample"
+            }))?;
+            for dynamic in [false, true] {
+                let menu: PluginContribution = serde_json::from_value(serde_json::json!({
+                    "type": "context-menu", "id": "sample.open", "label": "Open",
+                    "menu": target, "dynamic": dynamic,
+                    "action": { "type": "open-workbench", "workbench": "sample.main" }
+                }))?;
+                let mut errors = Vec::new();
+                validate_contributions(&[workbench.clone(), menu], true, true, plugin_dir.path(), &mut errors);
+                if dynamic {
+                    assert!(errors.iter().any(|e| e.contains("requires a static open-workbench action")), "{errors:?}");
+                } else {
+                    assert!(errors.is_empty(), "{errors:?}");
+                }
+            }
+            let legacy: PluginContribution = serde_json::from_value(serde_json::json!({
+                "type": "context-menu", "id": "sample.legacy", "label": "Legacy", "menu": target
+            }))?;
+            let mut errors = Vec::new();
+            validate_contributions(&[legacy], true, false, plugin_dir.path(), &mut errors);
+            assert!(errors.iter().any(|e| e.contains("requires a static open-workbench action")), "{errors:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn dynamic_context_menu_requires_backend() -> Result<(), Box<dyn std::error::Error>> {
         let plugin_dir = tempfile::tempdir()?;
         let context_menu: PluginContribution = serde_json::from_value(serde_json::json!({
@@ -3207,7 +3241,7 @@ mod tests {
             .map(|value| value.as_str().unwrap().to_string())
             .collect::<Vec<_>>();
 
-        assert_eq!(declared, ["connection", "table"]);
+        assert_eq!(declared, ["connection", "table", "sql-file", "sql-folder"]);
         assert_eq!(
             schema["$defs"]["contextMenuContribution"]["properties"]["action"]["$ref"],
             "#/$defs/contextMenuAction"
