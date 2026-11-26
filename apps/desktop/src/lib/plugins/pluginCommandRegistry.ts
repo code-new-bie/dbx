@@ -52,7 +52,7 @@ export function executePluginCommand(registry: FrontendPluginRegistry, queryStor
   delete callerPayload.workbenchId;
   delete callerPayload.restored;
   delete callerPayload.surface;
-  const executionContext = { ...(action.context ?? {}), ...callerPayload };
+  const executionContext = { ...action.context, ...callerPayload };
   // presentation: panel -> adds an entry to the global bottom dock (§8.3); tab (default)
   // -> opens a workbench tab.
   if (action.presentation === "panel") {
