@@ -449,6 +449,11 @@ The `context.result` snapshot is bounded — `{ columns, rows (<= 500), truncate
 
 ### `context-menu`
 
+#### Desktop SQL file tree (experimental)
+
+Static context-menu contributions may target `sql-file` (SQL/script files) or `sql-folder` (opened folder headers and nested folders). They require a same-plugin declarative `open-workbench` action; dynamic and legacy backend menu actions are not supported for these surfaces yet. The host opens/reuses the workbench and forwards only `context.sqlFile = { kind: "file" | "folder", path, rootPath }` on explicit selection. Paths are absolute desktop-local paths; no editor text or credentials are provided. The host does not execute a version control command. Plugins must independently validate paths and require confirmation before writes. This does not extend the internal SQL Library or editor decorations.
+
+
 A context-menu entry is rendered **natively** by DBX (no sandbox iframe, native theme and keyboard behavior) in the declared menu surface. v1 supports the saved-connection and table menus in the Sidebar Tree. Object Browser integration is not part of the first table contribution surface.
 
 ```json
