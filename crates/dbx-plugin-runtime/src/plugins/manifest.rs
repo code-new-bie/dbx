@@ -3089,6 +3089,30 @@ mod tests {
     }
 
     #[test]
+    fn sql_decorations_require_folder_and_backend() -> Result<(), Box<dyn std::error::Error>> {
+        let plugin_dir = tempfile::tempdir()?;
+        for (target, backend, valid) in [
+            ("sql-folder", true, true),
+            ("sql-folder", false, false),
+            ("sql-file", true, false),
+            ("connection", true, false),
+        ] {
+            let workbench: PluginContribution = serde_json::from_value(serde_json::json!({
+                "type": "workbench", "id": "sample.main", "label": "Sample"
+            }))?;
+            let menu: PluginContribution = serde_json::from_value(serde_json::json!({
+                "type": "context-menu", "id": "sample.open", "label": "Open",
+                "menu": target, "decorations": true,
+                "action": { "type": "open-workbench", "workbench": "sample.main" }
+            }))?;
+            let mut errors = Vec::new();
+            validate_contributions(&[workbench, menu], backend, true, plugin_dir.path(), &mut errors);
+            assert_eq!(errors.is_empty(), valid, "{errors:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn dynamic_context_menu_requires_backend() -> Result<(), Box<dyn std::error::Error>> {
         let plugin_dir = tempfile::tempdir()?;
         let context_menu: PluginContribution = serde_json::from_value(serde_json::json!({
