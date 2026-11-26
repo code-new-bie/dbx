@@ -50,7 +50,7 @@ export function sanitizeSqlFileDecorations(rootPath: string, value: unknown): Ma
   for (const row of value) {
     if (!row || typeof row !== "object" || typeof row.path !== "string" || row.path.length > 4096 || typeof row.badge !== "string") continue;
     const path = sqlFileDecorationKey(row.path);
-    if (!path.startsWith(prefix) || path.split("/").some((part) => part === "." || part === "..") || /[\x00-\x1f]/.test(path)) continue;
+    if (!path.startsWith(prefix) || path.split("/").some((part) => part === "." || part === "..") || Array.from(path).some((char) => char.charCodeAt(0) < 32)) continue;
     const badge = SQL_FILE_DECORATION_BADGES.find((candidate) => candidate === row.badge);
     if (badge) result.set(path, badge);
   }
