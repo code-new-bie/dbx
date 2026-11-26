@@ -79,6 +79,11 @@ describe("SQL file decorations", () => {
       ["C:/SQL/hello @ 中文.sql", "M"],
       ["C:/SQL/inner/new.sql", "A"],
     ]);
-    expect(sanitizeSqlFileDecorations("/sql", Array.from({ length: SQL_FILE_DECORATION_LIMIT + 1 }, () => ({ path: "/sql/x.sql", badge: "M" }))).size).toBe(0);
+    expect(
+      sanitizeSqlFileDecorations(
+        "/sql",
+        Array.from({ length: SQL_FILE_DECORATION_LIMIT + 1 }, () => ({ path: "/sql/x.sql", badge: "M" })),
+      ).size,
+    ).toBe(0);
   });
 });
