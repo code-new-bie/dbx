@@ -1,0 +1,44 @@
+name: SQL file plugin extension
+
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/src/lib/plugins/**'
+      - 'apps/desktop/src/components/layout/SqlFilePanel.vue'
+      - 'apps/desktop/src/types/database.ts'
+      - 'plugins/manifest.schema.json'
+      - 'crates/dbx-plugin-runtime/**'
+      - '.github/workflows/sql-file-plugin-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test plugin context routing and registry
+        run: pnpm test apps/desktop/src/lib/plugins/sqlFilePluginContext.spec.ts apps/desktop/src/lib/plugins/frontendPlugin.spec.ts apps/desktop/src/lib/plugins/pluginContext.spec.ts
+  manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+      - name: Validate manifest contract
+        run: cargo test -p dbx-plugin-runtime --lib context_menu
