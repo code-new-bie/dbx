@@ -8,7 +8,12 @@ export interface SqlFilePluginContext {
 }
 
 /** No editor contents, credentials or SQL connection metadata cross this boundary. */
-export function buildSqlFilePluginMenuItems(registry: FrontendPluginRegistry, target: SqlFilePluginContext, open: (pluginId: string, workbenchId: string, title: string, context: Record<string, unknown>) => void, enableDecorations?: (pluginId: string, contributionId: string, target: SqlFilePluginContext) => void): ContextMenuItem[] {
+export function buildSqlFilePluginMenuItems(
+  registry: FrontendPluginRegistry,
+  target: SqlFilePluginContext,
+  open: (pluginId: string, workbenchId: string, title: string, context: Record<string, unknown>) => void,
+  enableDecorations?: (pluginId: string, contributionId: string, target: SqlFilePluginContext) => void,
+): ContextMenuItem[] {
   if (!target.path || !target.rootPath) return [];
   const context = { sqlFile: { kind: target.kind, path: target.path, rootPath: target.rootPath } };
   return registry.listContextMenuItems(target.kind === "file" ? "sql-file" : "sql-folder").flatMap(({ plugin, contribution }) => {
