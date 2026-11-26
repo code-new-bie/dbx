@@ -3089,7 +3089,7 @@ mod tests {
     }
 
     #[test]
-    fn sql_decorations_require_folder_and_backend() -> Result<(), Box<dyn std::error::Error>> {
+    fn context_menu_sql_decorations_require_folder_and_backend() -> Result<(), Box<dyn std::error::Error>> {
         let plugin_dir = tempfile::tempdir()?;
         for (target, backend, valid) in [
             ("sql-folder", true, true),
